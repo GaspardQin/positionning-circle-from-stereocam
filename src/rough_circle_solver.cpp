@@ -23,7 +23,7 @@ void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge, std::vector<Eige
 		int count = contours[i].size();
 		if( count < 6 ) continue; //need at least 6 points to fit an ellipse
 
-        RotatedRect box = fitEllipse(contours[i]);
+        cv::RotatedRect box = fitEllipse(contours[i]);
         if( std::max(box.size.width, box.size.height) / std::min(box.size.width, box.size.height) > flattening_treshold)
             continue;
         
@@ -31,26 +31,27 @@ void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge, std::vector<Eige
 
 
         #ifdef DEBUG
-        drawContours(show_img, contours, (int)i, Scalar::all(255), 1, 8);
-        ellipse(show_img, box, Scalar(0,0,255), 1, CV_AA);
+        drawContours(show_img, contours, (int)i, cv::Scalar::all(255), 1, 8);
+        ellipse(show_img, box, cv::Scalar(0,0,255), 1, CV_AA);
         #endif //DEBUG
 
         double a = box.size.width;
         double b = box.size.height;
         double x_center = box.center.x;
-        double y_center = box.center_y;
+        double y_center = box.center.y;
         double A = 1/(a*a);
         double B = 0;
         double C = 1/(b*b);
         double D = -2*x_center/(a*a);
         double E = -2*y_center/(b*b);
         double F = x_center * x_center / (a * a) + y_center * y_center /(b*b);
-        Eigen::Matrix3d ellipse << A, B/2.0, D/2.0, B/2.0, C, E/2.0, D/2.0, E/2.0, F;
+        Eigen::Matrix3d ellipse;
+        ellipse << A, B/2.0, D/2.0, B/2.0, C, E/2.0, D/2.0, E/2.0, F;
         ellipses_vec.push_back(ellipse);
     }
 }
 
-void RoughCircleSolver::computeI2I3I4(const Eigen::Matrix4d& A, const Eigen::Matrix4d& B, double& I2, double& I3, double& I4){
+void RoughCircleSolver::computeI2I3I4(const Eigen::Matrix4d& A, const Eigen::Matrix4d& B, double& I_2, double& I_3, double& I_4){
     /** compute I_2, I_3, I_4, which are mentioned in the paper : "Long Quan. Conic Reconstruction and Correspondence from Two Views"
      * to simplify the programming, we choose to calculate I_2, I_3, I_4 numerically
      * by setting lambda = 1, -1, 2
@@ -91,7 +92,7 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d>& left_poss
     Eigen::Matrix4d A, B; //X^t * A * X =0, same for B
 
     std::vector<CirclePair> circle_pairs;
-    double error_threshold = 5.0;
+    double error_threshold = 0.1;
 
     Eigen::Matrix<double, 3, 4> left_projection, right_projection;
     left_projection = stereo_cam_ptr->left.projectionEigenMatrix();
@@ -103,7 +104,7 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d>& left_poss
         int min_index = -1;
         for( int j=0; j<right_possible_ellipses.size(); j++){
             B = right_projection.transpose() * right_possible_ellipses[j] * right_projection;
-            double I_2, I3, I4;
+            double I_2, I_3, I_4;
             computeI2I3I4(A, B, I_2, I_3, I_4);
             double curr_error = fabs(I_3 * I_3 - 4* I_2 * I_4);
             if(curr_error < min_error){
@@ -121,10 +122,11 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d>& left_poss
     // calculate the circle's pose
     double base_line; // in mm
     base_line = - right_projection(0,3) / right_projection(0,1);
-    Eigen::Vector4d right_camera_origin << base_line, 0 ,0, 1;
+    Eigen::Vector4d right_camera_origin;
+    right_camera_origin << base_line, 0 ,0, 1;
 
     for(int i=0; i<circle_pairs.size(); i++){
-        double I_2, I3, I4;
+        double I_2, I_3, I_4;
         int left_id = std::get<0>(circle_pairs[i]);
         int right_id = std::get<1>(circle_pairs[i]);
         A = left_projection.transpose() * left_possible_ellipses[left_id] * left_projection;
@@ -133,8 +135,8 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d>& left_poss
     
         double lambda = -I_3/(2*I_2);
         Eigen::Matrix4d C = A + lambda * B;
-        SelfAdjointEigenSolver<Eigen::Matrix4d> eigensolver(C);
-        if (eigensolver.info() != Success){
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> eigensolver(C);
+        if (eigensolver.info() != Eigen::Success){
             std::cout<<"failed to get the eigen values/vectors"<<std::endl;
             continue;
         };
@@ -155,7 +157,7 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d>& left_poss
         // find the plane of the circle
         Eigen::Vector4d p = std::sqrt(-eigen_values[eigen_non_zero_index[0]]) * eigensolver.eigenvectors().col(eigen_non_zero_index[0])
                + std::sqrt(eigen_values[eigen_non_zero_index[1]]) * eigensolver.eigenvectors().col(eigen_non_zero_index[1]);
-        if(p.cross(p-right_camera_origin) < 0){
+        if(p.dot(p-right_camera_origin) < 0){
             p = std::sqrt(-eigen_values[eigen_non_zero_index[0]]) * eigensolver.eigenvectors().col(eigen_non_zero_index[0])
                - std::sqrt(eigen_values[eigen_non_zero_index[1]]) * eigensolver.eigenvectors().col(eigen_non_zero_index[1]);
         }
@@ -174,8 +176,82 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d>& left_poss
         computePointsInPlane(p_x, p_y, p, circle_point_3d);
         
         double r = (center_point_3d - circle_point_3d).norm();
-        circles.push_back(Circle3D(center_point_3d, p, r);
+        circles.push_back(Circle3D(center_point_3d, p, r));
     }
 
 
+}
+
+
+void RoughCircleSolver::getPossibleCircles(const cv::Mat& left_edge, const cv::Mat& right_edge, std::vector<Circle3D>& circles){
+    /** Main function of this class, get all the possible circles in the image.
+     * @ param left_edge : the left edge image
+     * @ param right_edge : the right edge image
+     * @ param circles : the circles contained in the left/right image.
+    */ 
+    std::vector<Eigen::Matrix3d> left_ellipses_vec, right_ellipses_vec;
+    getPossibleEllipse(left_edge, left_ellipses_vec);
+    getPossibleEllipse(right_edge, right_ellipses_vec);
+    
+    getCircles(left_edge, right_edge, circles);    
+}
+
+void RoughCircleSolver::reprojectCircles(cv::Mat& image, const Circle3D& circle, int camera_id, int sample_size, const cv::Scalar& color){
+    /** reproject a circle in 3D into the image (left/right, indicated by the camera_id)
+     *  the circle is discrete by uniformly sampled points, and the 3D points are projected into the image.
+     * @ param image : the image needed to be shown, it should be in BGR, attention: this function will change this image.
+     * @ param circle : the circle needed to be projected.
+     * @ camera_id : it could be LEFT_CAMERA or RIGHT_CAMERA
+     * @ sample_size : the number of sampling points.
+     * @ color : the color of sampling points which are shown in the image.
+    */ 
+    double increment_angle = 2 * M_PI / sample_size;
+    Eigen::Matrix4d transform_circle_to_camera;
+    Eigen::Vector3d pixel_pos;
+
+    Eigen::Matrix<double, 3, 4> projection_matrix;
+    
+    switch (camera_id)
+    {
+        case LEFT_CAMERA : {
+            projection_matrix = stereo_cam_ptr->left.projectionEigenMatrix();
+            break;
+        }
+        case RIGHT_CAMERA:{
+            projection_matrix = stereo_cam_ptr->left.projectionEigenMatrix();
+            break;
+        }
+        default:
+            assert("camera id should be only one of the LEFT_CAMERA or RIGHT_CAMERA");
+            break;
+    }
+
+    circle.getTransformMatrixToOrigin(transform_circle_to_camera);
+
+    cv::Vec3b pixel_color(color(0), color(1), color(2));
+    for(int i = 0; i < sample_size; i++){
+        Eigen::Vector4d point_in_circle_coord; // the point on the circle, which is presented in the circle coordinate. (origin is the circle's center)
+        point_in_circle_coord(0) = circle.radius * std::cos(increment_angle * i);
+        point_in_circle_coord(1) = circle.radius * std::sin(increment_angle * i);
+        point_in_circle_coord(2) = 0.0;
+        point_in_circle_coord(3) = 1.0;
+
+        // transform point in circle coordinate into camera's coordinate.
+        Eigen::Vector4d point_in_camera_coord = transform_circle_to_camera * point_in_circle_coord;
+        pixel_pos = projection_matrix * point_in_camera_coord;
+        
+        // normalize pixel pos
+        pixel_pos(0) = pixel_pos(0) / pixel_pos(2);
+        pixel_pos(1) = pixel_pos(1) / pixel_pos(2);
+
+        // draw points on the image
+        image.at<cv::Vec3b>((int)pixel_pos(0), (int)pixel_pos(1)) = pixel_color;
+    }
+    
+}
+
+void RoughCircleSolver::reprojectCircles(cv::Mat& image, const std::vector<Circle3D>& circles_vec, int camera_id, int sample_size, const cv::Scalar& color){
+    for(int i=0; i<circles_vec.size(); i++){
+        reprojectCircles(image, circles_vec[i], camera_id, sample_size, color);
+    }
 }

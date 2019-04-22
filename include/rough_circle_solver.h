@@ -16,11 +16,14 @@
 #include <tuple>
 
 #include <Eigen/Dense>
+#include <Eigen/Eigenvalues> 
 
 #define DEBUG
 
 class RoughCircleSolver{
 private:
+    #define LEFT_CAMERA 0
+    #define RIGHT_CAMERA 1
     std::shared_ptr<StereoCameraModel> stereo_cam_ptr;
 public:
     RoughCircleSolver(std::shared_ptr<StereoCameraModel>& stereo_cam_ptr_):stereo_cam_ptr(stereo_cam_ptr_){
@@ -29,6 +32,8 @@ public:
     void getPossibleCircles(const cv::Mat& left_edge, const cv::Mat& right_edge, std::vector<Circle3D>& circles);
     // main function of this class
 
+    void reprojectCircles(cv::Mat& image, const Circle3D& circle, int camera_id, int sample_size, const cv::Scalar& color);
+    void reprojectCircles(cv::Mat& image, const std::vector<Circle3D>& circles_vec, int camera_id, int sample_size, const cv::Scalar& color);
 
 private:
     void getPossibleEllipse(const cv::Mat &edge, std::vector<Eigen::Matrix3d>& ellipses); //helper function
@@ -36,6 +41,7 @@ private:
     typedef std::tuple<int, int, double> CirclePair; // left index, right index, error
     void computeI2I3I4(const Eigen::Matrix4d& A, const Eigen::Matrix4d& B, double& I2, double& I3, double& I4);
     void computePointsInPlane(const double& u, const double& v, const Eigen::Vector4d& plane, Eigen::Vector4d& point);
+
 };
 
 
