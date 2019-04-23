@@ -10,7 +10,7 @@ private:
     Eigen::Matrix<double, 3, 4> projection_mat; // from 3d space to pixel space in calibrated image.
     cv::Size image_size;
 public:
-    CameraModel();
+    CameraModel(){};
 
     CameraModel(double intrinsic_coeffs[9], double distortion_coeffs[5], double projection_coeffs[12], int image_size_[2])
     {

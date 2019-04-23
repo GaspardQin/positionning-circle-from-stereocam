@@ -1,6 +1,6 @@
 #include "rough_circle_solver.h"
 
-void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge, std::vector<Eigen::Matrix3d>& ellipses_vec){
+void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vector<Eigen::Matrix3d>& ellipses_vec){
     /**
     * find ellipse from a single image, the ellipses are presented in the pixel coordinate.
     * @param edge an edge image (binary)
@@ -10,17 +10,27 @@ void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge, std::vector<Eige
     * thus X^t * C * X =0, where X = [x, y, 1]^t , see https://en.wikipedia.org/wiki/Matrix_representation_of_conic_sections 
     */
     #ifdef DEBUG
-    cv::Mat show_img(edge.size(), CV_8UC3);
+    cv::Mat show_img;
+    cv::cvtColor(edge_input, show_img, CV_GRAY2BGR);
     #endif
+    cv::Mat edge;
+    cv::dilate(edge_input, edge, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3)), cv::Point(-1, -1), 2);
+
+    cv::erode(edge, edge, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3)), cv::Point(-1, -1), 2);
+
 
     std::vector<std::vector<cv::Point> > contours;
     cv::findContours(edge, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
-    const double flattening_treshold = 3.0; // the threshold of flattening of the ellipse
-    const double min_area_threshold = 50; // the threshold of minimum area of the ellipse
+    const double flattening_treshold = 2.0; // the threshold of flattening of the ellipse
+    const double min_area_threshold = 2000; // the threshold of minimum area of the ellipse
+
     for (int i = 0; i < contours.size(); i++)
     {
 
-		int count = contours[i].size();
+        #ifdef DEBUG
+        drawContours( show_img, contours, i, cv::Scalar(0,255,0), 1);
+        #endif
+        int count = contours[i].size();
 		if( count < 6 ) continue; //need at least 6 points to fit an ellipse
 
         cv::RotatedRect box = fitEllipse(contours[i]);
@@ -34,19 +44,11 @@ void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge, std::vector<Eige
         drawContours(show_img, contours, (int)i, cv::Scalar::all(255), 1, 8);
         ellipse(show_img, box, cv::Scalar(0,0,255), 1, CV_AA);
         #endif //DEBUG
-
-        double a = box.size.width;
-        double b = box.size.height;
-        double x_center = box.center.x;
-        double y_center = box.center.y;
-        double A = 1/(a*a);
-        double B = 0;
-        double C = 1/(b*b);
-        double D = -2*x_center/(a*a);
-        double E = -2*y_center/(b*b);
-        double F = x_center * x_center / (a * a) + y_center * y_center /(b*b);
         Eigen::Matrix3d ellipse;
-        ellipse << A, B/2.0, D/2.0, B/2.0, C, E/2.0, D/2.0, E/2.0, F;
+        translateEllipse(box, ellipse);
+        
+        cv::RotatedRect re_translate_box;
+        translateEllipse(ellipse, re_translate_box);
         ellipses_vec.push_back(ellipse);
     }
 }
@@ -57,8 +59,10 @@ void RoughCircleSolver::computeI2I3I4(const Eigen::Matrix4d& A, const Eigen::Mat
      * by setting lambda = 1, -1, 2
     */
     double y_positive_one = (A + B).determinant();
-    double y_negative_one = (A - B).determinant();
-    double y_positive_two = (A + B * 2).determinant();
+    double k = std::exp(std::log(y_positive_one) / 4.0);
+    double y_negative_one = ((A - B)/k).determinant();
+    double y_positive_two = ((A + B * 2)/k).determinant();
+    y_positive_one = ((A+B)/k).determinant();
     I_2 = (y_positive_two - y_negative_one)/6.0 - y_positive_one/2.0;
     I_3 = (y_positive_one + y_negative_one)/2.0;
     I_4 = y_positive_one - y_negative_one/3.0 - y_positive_two/6.0;
@@ -79,6 +83,35 @@ void RoughCircleSolver::computePointsInPlane(const double& u, const double& v, c
     point(0) = point(2) * m;
     point(3) = 1;
 }
+void RoughCircleSolver::translateEllipse(const Eigen::Matrix3d& ellipse_quad_form, cv::RotatedRect& ellipse_cv_form){
+    double A = ellipse_quad_form(0,0);
+    double D = 2 * ellipse_quad_form(0,2);
+    double C = ellipse_quad_form(1,1);
+    double E = 2 * ellipse_quad_form(1,2);
+    double F = ellipse_quad_form(2,2);
+
+    ellipse_cv_form.center.x = - D / (2 * A);
+    ellipse_cv_form.center.y = - E / (2 * C);
+    double k = (F+1) / (D*D/4/A + E*E/4/C);
+    ellipse_cv_form.size.width = std::sqrt(1/k/A);
+    ellipse_cv_form.size.height = std::sqrt(1/k/C);
+}
+void RoughCircleSolver::translateEllipse(const cv::RotatedRect& ellipse_cv_form, Eigen::Matrix3d& ellipse_quad_form){
+    double a = ellipse_cv_form.size.width;
+    double b = ellipse_cv_form.size.height;
+    double x_center = ellipse_cv_form.center.x;
+    double y_center = ellipse_cv_form.center.y;
+    
+    double A = 100.0/(a*a);
+    double B = 0;
+    double C = 100.0/(b*b);
+    double D = -2*x_center * A;
+    double E = -2*y_center * C ;
+    double F = x_center * x_center * A + y_center * y_center * C -100.0;
+            
+    ellipse_quad_form << A, B/2.0, D/2.0, B/2.0, C, E/2.0, D/2.0, E/2.0, F;
+}
+
 
 void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d>& left_possible_ellipses, 
                                    const std::vector<Eigen::Matrix3d>& right_possible_ellipses, 
@@ -143,14 +176,14 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d>& left_poss
         Eigen::Vector4d eigen_values = eigensolver.eigenvalues(); //increasing order
         int eigen_non_zero_index[4]; int id_non_zero_index = 0;
     
-        for(int eigen_i=0; eigen_i ++; eigen_i < 4){
+        for(int eigen_i=0; eigen_i < 4; eigen_i ++){
             if(fabs(eigen_values[eigen_i]) > 0.00001){
                 eigen_non_zero_index[id_non_zero_index] = eigen_i;
                 id_non_zero_index ++;
             }
         }
         if(id_non_zero_index >=2){
-            std::cout<<"has more than 2 non zeros eigen values, seems something wrong..."<<std::endl;
+            std::cout<<"has more than 2 non zeros eigen values, seems something is wrong..."<<std::endl;
         }
         if(eigen_values[eigen_non_zero_index[0]] * eigen_values[eigen_non_zero_index[1]] >= 0) continue;
         
@@ -193,7 +226,7 @@ void RoughCircleSolver::getPossibleCircles(const cv::Mat& left_edge, const cv::M
     getPossibleEllipse(left_edge, left_ellipses_vec);
     getPossibleEllipse(right_edge, right_ellipses_vec);
     
-    getCircles(left_edge, right_edge, circles);    
+    getCircles(left_ellipses_vec, right_ellipses_vec, circles);    
 }
 
 void RoughCircleSolver::reprojectCircles(cv::Mat& image, const Circle3D& circle, int camera_id, int sample_size, const cv::Scalar& color){

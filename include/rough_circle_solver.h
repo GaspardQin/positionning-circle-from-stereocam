@@ -41,6 +41,8 @@ private:
     typedef std::tuple<int, int, double> CirclePair; // left index, right index, error
     void computeI2I3I4(const Eigen::Matrix4d& A, const Eigen::Matrix4d& B, double& I2, double& I3, double& I4);
     void computePointsInPlane(const double& u, const double& v, const Eigen::Vector4d& plane, Eigen::Vector4d& point);
+    void translateEllipse(const Eigen::Matrix3d& ellipse_quad_form, cv::RotatedRect& ellipse_cv_form);
+    void translateEllipse(const cv::RotatedRect& ellipse_cv_form, Eigen::Matrix3d& ellipse_quad_form);
 
 };
 

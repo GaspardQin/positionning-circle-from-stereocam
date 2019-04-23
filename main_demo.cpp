@@ -19,7 +19,7 @@ void setCamera(std::shared_ptr<StereoCameraModel>& stereo_cam_ptr){
     double right_projection[12] = {1376.915308200754, 2.002081978942329, 1088.671309797108, -169123.8601871156, -14.5707534390388, 1393.226512711618, 683.0201179347162, -157.3182194049588, -0.01682694049012899, -0.001009946069590211, 0.9998579069461211, -1.584014773188137};
 
     stereo_cam_ptr->initLeft(left_intrinsic, left_distortion, left_projection, image_size);
-    stereo_cam_ptr->initLeft(right_intrinsic, right_distortion, right_projection, image_size);
+    stereo_cam_ptr->initRight(right_intrinsic, right_distortion, right_projection, image_size);
 }
  
 int main(int argc, char** argv) {
@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
     if(argc <= 1){
         assert("please input the id of images");
     }
-    std::string path = "../images/";
+    std::string path = "images/";
     std::string left_raw_image_name = "raw_left";
     left_raw_image_name += std::string(argv[1]) + ".png";
     std::string right_raw_image_name = "raw_right";
@@ -36,10 +36,12 @@ int main(int argc, char** argv) {
     cv::Mat left_raw_image = cv::imread(path+left_raw_image_name);
     if(left_raw_image.empty()){
         std::cout << "cannot load image: "<<path <<left_raw_image_name;
+        abort();
     }
     cv::Mat right_raw_image = cv::imread(path+right_raw_image_name);
     if(right_raw_image.empty()){
         std::cout << "cannot load image: "<<path <<right_raw_image_name;
+        abort();
     }
 
     cv::Mat left_rectified_image, right_rectified_image;
@@ -50,12 +52,12 @@ int main(int argc, char** argv) {
     stereo_cam_ptr->right.rectifyImage(right_raw_image, right_rectified_image);
 
     cv::Mat left_gray, right_gray;
-    cv::cvtColor(left_raw_image, left_gray, CV_BGR2GRAY);
-    cv::cvtColor(right_raw_image, right_gray, CV_BGR2GRAY);
+    cv::cvtColor(left_rectified_image, left_gray, CV_BGR2GRAY);
+    cv::cvtColor(right_rectified_image, right_gray, CV_BGR2GRAY);
 
     cv::Mat left_edge, right_edge;
     CannyTrackBar canny_bar_left(left_gray, "canny_bar_of_left_image", 500, 1500, 3000, 5000);
-    CannyTrackBar canny_bar_right(right_gray, "canny_bar_of_left_image", 500, 1500, 3000, 5000);
+    CannyTrackBar canny_bar_right(right_gray, "canny_bar_of_right_image", 500, 1500, 3000, 5000);
     left_edge = canny_bar_left.edge;
     right_edge = canny_bar_right.edge;
 
@@ -68,5 +70,8 @@ int main(int argc, char** argv) {
 
     solver.reprojectCircles(left_show_image, circles, LEFT_CAMERA, 50, cv::Scalar(255,0,0));
     solver.reprojectCircles(right_show_image, circles, RIGHT_CAMERA, 50, cv::Scalar(255,0,0));
-
+    cv::imshow("left_reproject", left_show_image);
+    cv::imshow("right_reproject", right_show_image);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
 }

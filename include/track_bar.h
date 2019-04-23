@@ -30,6 +30,7 @@ public:
         thresh2_bar.setTrackBar(window_name_input,"tresh2", default_thresh2, max_thresh2, onTrackBar, reinterpret_cast<void*>(this));
         applyCanny();
         cv::waitKey(0);        
+        cv::destroyWindow(window_name);
 
     }
     void applyCanny(){
