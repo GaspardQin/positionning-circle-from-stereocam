@@ -36,8 +36,7 @@ public:
     void reprojectCircles(cv::Mat& image, const std::vector<Circle3D>& circles_vec, int camera_id, int sample_size, const cv::Scalar& color);
 
 private:
-    void getPossibleEllipse(const cv::Mat &edge_input, std::vector<Eigen::Matrix3d> &ellipses_vec, std::vector<cv::RotatedRect>* ellipses_box_vec_ptr=nullptr)
-; //helper function
+    void getPossibleEllipse(const cv::Mat &edge_input, std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>> &ellipses_vec); //helper function
     void getCircles(const std::vector<Eigen::Matrix3d>& left_possible_ellipses, const std::vector<Eigen::Matrix3d>& right_possible_ellipses, 
                     std::vector<Circle3D>& circles, const std::vector<cv::RotatedRect>* left_ellipses_box_ptr=nullptr, const std::vector<cv::RotatedRect>* right_ellipses_box_ptr=nullptr,
                     const cv::Mat* left_edge_ptr=nullptr, const cv::Mat* right_edge_ptr=nullptr);//helper function

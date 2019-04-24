@@ -1,6 +1,10 @@
 #include "rough_circle_solver.h"
-
-void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vector<Eigen::Matrix3d> &ellipses_vec, std::vector<cv::RotatedRect>* ellipses_box_vec_ptr)
+template <T>
+bool isIn(T num, T min, T max){
+    if(T>=min && T<=max) return true;
+    else return false;
+}
+void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>> &ellipses_vec)
 {
 /**
     * find ellipse from a single image, the ellipses are presented in the pixel coordinate.
@@ -24,6 +28,8 @@ void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vecto
     const double flattening_treshold = 2.0; // the threshold of flattening of the ellipse
     const double min_area_threshold = 2000; // the threshold of minimum area of the ellipse
 
+
+    std::vector<cv::RotatedRect> all_ellipses;
     for (int i = 0; i < contours.size(); i++)
     {
 
@@ -45,17 +51,31 @@ void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vecto
         drawContours(show_img, contours, (int)i, cv::Scalar::all(255), 1, 8);
         ellipse(show_img, box, cv::Scalar(0, 0, 255), 1, CV_AA);
 #endif //DEBUG
-        Eigen::Matrix3d ellipse;
-        translateEllipse(box, ellipse);
 
-        if(ellipses_box_vec_ptr != nullptr){
-            ellipses_box_vec_ptr->push_back(box);
+        all_ellipses.push_back(box);
+
+    }
+
+    // check whether there are two circles with the same center
+    for(int i=0; i<all_ellipses.size(); i++){
+        for(int j=i+1; j<all_ellipses.size(); j++){
+            // check the centers
+            if(fabs(all_ellipses[j].center.x -  all_ellipses[i].center.x) > 5 || fabs(all_ellipses[j].center.y - all_ellipses[j].center.y) > 5) continue;
+
+            // check the angle
+            if(fabs(all_ellipses[i].angle - all_ellipses[j].angle) > 10) continue; //degree
+
+            // chech the radius
+            double rad_i = (all_ellipses[i].width + all_ellipses[j].height)/4;
+            double rad_j = (all_ellipses[j].width + all_ellipses[j].height)/4;
+            if(isIn(rad_i/rad_j,  0.6, 0.9)){
+                ellipses_vec.push_back(std::make_pair(all_ellipses[i], all_ellipses[j]));
+            }
+            else if(isIn(rad_j/rad_i, 1.1, 1.4)){
+                ellipses_vec.push_back(std::make_pair(all_ellipses[j], all_ellipses[i]));
+            }
+
         }
-        
-        cv::RotatedRect re_translate_box;
-        translateEllipse(ellipse, re_translate_box);
-        ellipses_vec.push_back(ellipse);
-
     }
 }
 
@@ -244,6 +264,7 @@ void RoughCircleSolver::translateEllipse(const cv::RotatedRect &ellipse_cv_form,
 
     ellipse_quad_form << A/F, B / 2.0/F, D / 2.0/F, B / 2.0/F, C/F, E / 2.0/F, D / 2.0/F, E / 2.0/F, 1.0;
 
+    /*
     //verify the translation
     double alpha = 0.0;
     cv::Mat image(stereo_cam_ptr->left.imageSize(), CV_8UC3, cv::Scalar(0,0,0));
@@ -266,15 +287,75 @@ void RoughCircleSolver::translateEllipse(const cv::RotatedRect &ellipse_cv_form,
         std::cout<<"verification result: "<<result<<std::endl;
     }
 
-
+    */
     
 }
+bool RoughCircleSolver::computeCircle3D(const Eigen::Matrix3d& left_ellipse_quadratic, const Eigen::Matrix3d& right_ellipse_quadratic, Circle3D& circle){
+    double I_2, I_3, I_4;
+    Eigen::Matrix4d A = left_projection.transpose() * left_ellipse_quadratic * left_projection;
+    Eigen::Matrix4d B = right_projection.transpose() * right_ellipse_quadratic * right_projection;
 
-void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d> &left_possible_ellipses,
-                                   const std::vector<Eigen::Matrix3d> &right_possible_ellipses,
-                                   std::vector<Circle3D> &circles,
-                                   const std::vector<cv::RotatedRect>* left_ellipses_box_ptr,
-                                   const std::vector<cv::RotatedRect>* right_ellipses_box_ptr,
+    computeI2I3I4Analytic(A, B, I_2, I_3, I_4);
+
+    double lambda = -I_3 / (2 * I_2);
+    Eigen::Matrix4d C = A + lambda * B;
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> eigensolver(C);
+    if (eigensolver.info() != Eigen::Success)
+    {
+        std::cout << "failed to get the eigen values/vectors" << std::endl;
+        return false;
+    };
+    Eigen::Vector4d eigen_values = eigensolver.eigenvalues(); //increasing order
+    int eigen_non_zero_index[4];
+    int id_non_zero_index = 0;
+
+    for (int eigen_i = 0; eigen_i < 4; eigen_i++)
+    {
+        if (fabs(eigen_values(eigen_i)) > 0.00001)
+        {
+            eigen_non_zero_index[id_non_zero_index] = eigen_i;
+            id_non_zero_index++;
+        }
+    }
+    if (id_non_zero_index >= 2)
+    {
+        std::cout << "has more than 2 non zeros eigen values, seems something is wrong..." << std::endl;
+    }
+    if (eigen_values(eigen_non_zero_index[0]) * eigen_values(eigen_non_zero_index[1]) >= 0)
+        return false;
+
+    // find the plane of the circle
+    Eigen::Vector4d p = std::sqrt(-eigen_values(eigen_non_zero_index[0])) * eigensolver.eigenvectors().col(eigen_non_zero_index[0]) + std::sqrt(eigen_values(eigen_non_zero_index[1])) * eigensolver.eigenvectors().col(eigen_non_zero_index[1]);
+    if (p.dot(p - right_camera_origin) < 0)
+    {
+        p = std::sqrt(-eigen_values(eigen_non_zero_index[0])) * eigensolver.eigenvectors().col(eigen_non_zero_index[0]) - std::sqrt(eigen_values(eigen_non_zero_index[1])) * eigensolver.eigenvectors().col(eigen_non_zero_index[1]);
+    }
+
+    // find the center of the circle
+    // Here, we assume the center of the circle is also the center of the ellipse in the image.
+    double center_x = -left_ellipse_quadratic(0, 2) / left_ellipse_quadratic(0, 0);
+    double center_y = -left_ellipse_quadratic(1, 2) / left_ellipse_quadratic(0, 0);
+    double a = 1.0 / sqrt(left_ellipse_quadratic(0, 0));
+    double p_x = center_x + a; // point on the ellipse
+    double p_y = center_y;
+
+    Eigen::Vector4d center_point_3d, circle_point_3d;
+    computePointsInPlane(center_x, center_y, p, center_point_3d);
+    computePointsInPlane(p_x, p_y, p, circle_point_3d);
+
+    circle.radius = (center_point_3d - circle_point_3d).norm();
+    circle.plane = p;
+    circle.center = center_point_3d;
+    return true;
+}
+
+bool RoughCircleSolver::areConcentric(const Circle3D a, const Circle3D b, double center_threshold){
+    if((a.center - b.center).norm() < center_threshold) return true;
+    else return false;
+}
+void RoughCircleSolver::getCircles(const std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>> &left_possible_ellipses,
+                                   const std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>> &right_possible_ellipses,
+                                   std::vector<ConcentricCircles3D> &concentric_circles,
                                    const cv::Mat* left_edge_ptr,
                                    const cv::Mat* right_edge_ptr)
 {
@@ -298,44 +379,6 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d> &left_poss
     cv::cvtColor(*left_edge_ptr, left_edge, CV_GRAY2BGR);
     cv::cvtColor(*right_edge_ptr, right_edge, CV_GRAY2BGR);
 
-    for (int i = 0; i < left_possible_ellipses.size(); i++)
-    {
-        A = left_projection.transpose() * left_possible_ellipses[i] * left_projection;
-        double min_error = std::numeric_limits<double>::max();
-        int min_index = -1;
-        cv::cvtColor(*left_edge_ptr, left_edge, CV_GRAY2BGR);
-
-        ellipse(left_edge, (*left_ellipses_box_ptr)[i], cv::Scalar(0, 0, 255), 1, CV_AA);
-
-        for (int j = 0; j < right_possible_ellipses.size(); j++)
-        {
-            B = right_projection.transpose() * right_possible_ellipses[j] * right_projection;
-            
-            //A << -0.0013, 0.4710e-5, -0.00023, 0.0058, 0.4710e-5, -0.000078, -0.00034, 0.0033, -0.00023, -0.00034, -0.0014, 0.011, 0.0058, 0.0033, 0.011, -0.038;
-            //B << 1.0, 0.0, 0.0, -9.0, 0.0, 1.0, 0.0, -2.0, 0.0, 0.0, 1.0, -10.0, -9.0, -2.0, -10.0, 85.0;
-            double I_2, I_3, I_4;
-            computeI2I3I4Analytic(A, B, I_2, I_3, I_4);
-
-            //double norm = std::min(std::min(fabs(I_2), fabs(I_3)), fabs(I_4));
-            //I_2 /= norm;
-            //I_3 /= norm;
-            //I_4 /= norm;
-            cv::cvtColor(*right_edge_ptr, right_edge, CV_GRAY2BGR);
-            ellipse(right_edge, (*right_ellipses_box_ptr)[j], cv::Scalar(0, 0, 255), 1, CV_AA);
-
-            double curr_error = fabs(I_3 * I_3 - 4 * I_2 * I_4)/pow(A.norm() * B.norm(),2);
-            std::cout<<"curr_error: "<<curr_error<<std::endl;
-            if (curr_error < min_error)
-            {
-                min_error = curr_error;
-                min_index = j;
-            }
-        }
-        if (min_error < error_threshold)
-        {
-            circle_pairs.push_back(std::make_tuple(i, min_index, min_error));
-        }
-    }
 
     if (circle_pairs.empty())
         return;
@@ -346,64 +389,17 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d> &left_poss
     Eigen::Vector4d right_camera_origin;
     right_camera_origin << base_line, 0, 0, 1;
 
-    for (int i = 0; i < circle_pairs.size(); i++)
+
+    for (int i = 0; i < left_possible_ellipses.size(); i++)
     {
-        double I_2, I_3, I_4;
-        int left_id = std::get<0>(circle_pairs[i]);
-        int right_id = std::get<1>(circle_pairs[i]);
-        A = left_projection.transpose() * left_possible_ellipses[left_id] * left_projection;
-        B = right_projection.transpose() * right_possible_ellipses[right_id] * right_projection;
-        computeI2I3I4Analytic(A, B, I_2, I_3, I_4);
-
-        double lambda = -I_3 / (2 * I_2);
-        Eigen::Matrix4d C = A + lambda * B;
-        Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> eigensolver(C);
-        if (eigensolver.info() != Eigen::Success)
-        {
-            std::cout << "failed to get the eigen values/vectors" << std::endl;
-            continue;
-        };
-        Eigen::Vector4d eigen_values = eigensolver.eigenvalues(); //increasing order
-        int eigen_non_zero_index[4];
-        int id_non_zero_index = 0;
-
-        for (int eigen_i = 0; eigen_i < 4; eigen_i++)
-        {
-            if (fabs(eigen_values[eigen_i]) > 0.00001)
-            {
-                eigen_non_zero_index[id_non_zero_index] = eigen_i;
-                id_non_zero_index++;
+        for(int j=0; j<right_possible_ellipses.size(); j++){
+            Circle3D circle_inner, circle_outer;
+            computeCircle3D(std::get<0>(left_possible_ellipses), std::get<0>(left_possible_ellipses), circle_inner);
+            computeCircle3D(std::get<1>(left_possible_ellipses), std::get<1>(left_possible_ellipses), circle_outer);
+            if(areConcentric(circle_inner, circle_outer, 0.03)){
+                concentric_circles.push_back(ConcentricCircles3D(circle_inner, circle_outer));
             }
         }
-        if (id_non_zero_index >= 2)
-        {
-            std::cout << "has more than 2 non zeros eigen values, seems something is wrong..." << std::endl;
-        }
-        if (eigen_values[eigen_non_zero_index[0]] * eigen_values[eigen_non_zero_index[1]] >= 0)
-            continue;
-
-        // find the plane of the circle
-        Eigen::Vector4d p = std::sqrt(-eigen_values[eigen_non_zero_index[0]]) * eigensolver.eigenvectors().col(eigen_non_zero_index[0]) + std::sqrt(eigen_values[eigen_non_zero_index[1]]) * eigensolver.eigenvectors().col(eigen_non_zero_index[1]);
-        if (p.dot(p - right_camera_origin) < 0)
-        {
-            p = std::sqrt(-eigen_values[eigen_non_zero_index[0]]) * eigensolver.eigenvectors().col(eigen_non_zero_index[0]) - std::sqrt(eigen_values[eigen_non_zero_index[1]]) * eigensolver.eigenvectors().col(eigen_non_zero_index[1]);
-        }
-
-        // find the center of the circle
-        // Here, we assume the center of the circle is also the center of the ellipse in the image.
-        Eigen::Matrix3d ellipse_quadratic = left_possible_ellipses[left_id];
-        double center_x = -ellipse_quadratic(0, 2) / ellipse_quadratic(0, 0);
-        double center_y = -ellipse_quadratic(1, 2) / ellipse_quadratic(0, 0);
-        double a = 1.0 / sqrt(ellipse_quadratic(0, 0));
-        double p_x = center_x + a; // point on the ellipse
-        double p_y = center_y;
-
-        Eigen::Vector4d center_point_3d, circle_point_3d;
-        computePointsInPlane(center_x, center_y, p, center_point_3d);
-        computePointsInPlane(p_x, p_y, p, circle_point_3d);
-
-        double r = (center_point_3d - circle_point_3d).norm();
-        circles.push_back(Circle3D(center_point_3d, p, r));
     }
 }
 
