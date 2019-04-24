@@ -1,6 +1,6 @@
 #include "rough_circle_solver.h"
 
-void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vector<Eigen::Matrix3d> &ellipses_vec)
+void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vector<Eigen::Matrix3d> &ellipses_vec, std::vector<cv::RotatedRect>* ellipses_box_vec_ptr)
 {
 /**
     * find ellipse from a single image, the ellipses are presented in the pixel coordinate.
@@ -48,9 +48,14 @@ void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vecto
         Eigen::Matrix3d ellipse;
         translateEllipse(box, ellipse);
 
+        if(ellipses_box_vec_ptr != nullptr){
+            ellipses_box_vec_ptr->push_back(box);
+        }
+        
         cv::RotatedRect re_translate_box;
         translateEllipse(ellipse, re_translate_box);
         ellipses_vec.push_back(ellipse);
+
     }
 }
 
@@ -61,7 +66,7 @@ void RoughCircleSolver::computeI2I3I4(const Eigen::Matrix4d &A, const Eigen::Mat
      * by setting lambda = 1, -1, 2
     */
     double y_positive_one = (A + B).determinant();
-    double k = std::exp(std::log(y_positive_one) / 4.0);
+    double k = 1.0; //std::exp(std::log(y_positive_one) / 4.0);
     double y_negative_one = ((A - B) / k).determinant();
     double y_positive_two = ((A + B * 2) / k).determinant();
     y_positive_one = ((A + B) / k).determinant();
@@ -74,7 +79,7 @@ void RoughCircleSolver::computeI2I3I4Analytic(const Eigen::Matrix4d &A, const Ei
 {
     /** compute I_2, I_3, I_4, which are mentioned in the paper : "Long Quan. Conic Reconstruction and Correspondence from Two Views"
     */
-    I2 = A(0, 0) * B(1, 1) * B(2, 2) * B(3, 3) - A(0, 0) * B(1, 1) * B(2, 3) * B(3, 2) - A(0, 0) * B(1, 2) * B(2, 1) * B(3, 3) 
+    I_2 = A(0, 0) * B(1, 1) * B(2, 2) * B(3, 3) - A(0, 0) * B(1, 1) * B(2, 3) * B(3, 2) - A(0, 0) * B(1, 2) * B(2, 1) * B(3, 3) 
         + A(0, 0) * B(1, 2) * B(2, 3) * B(3, 1) + A(0, 0) * B(1, 3) * B(2, 1) * B(3, 2) - A(0, 0) * B(1, 3) * B(2, 2) * B(3, 1) 
         - A(0, 1) * B(1, 0) * B(2, 2) * B(3, 3) + A(0, 1) * B(1, 0) * B(2, 3) * B(3, 2) + A(0, 1) * B(1, 2) * B(2, 0) * B(3, 3) 
         - A(0, 1) * B(1, 2) * B(2, 3) * B(3, 0) - A(0, 1) * B(1, 3) * B(2, 0) * B(3, 2) + A(0, 1) * B(1, 3) * B(2, 2) * B(3, 0) 
@@ -107,7 +112,7 @@ void RoughCircleSolver::computeI2I3I4Analytic(const Eigen::Matrix4d &A, const Ei
         + A(3, 3) * B(0, 0) * B(1, 1) * B(2, 2) - A(3, 3) * B(0, 0) * B(1, 2) * B(2, 1) - A(3, 3) * B(0, 1) * B(1, 0) * B(2, 2) 
         + A(3, 3) * B(0, 1) * B(1, 2) * B(2, 0) + A(3, 3) * B(0, 2) * B(1, 0) * B(2, 1) - A(3, 3) * B(0, 2) * B(1, 1) * B(2, 0);
 
-    I3 = A(0, 0) * A(1, 1) * B(2, 2) * B(3, 3) - A(0, 0) * A(1, 1) * B(2, 3) * B(3, 2) - A(0, 0) * A(1, 2) * B(2, 1) * B(3, 3) 
+    I_3 = A(0, 0) * A(1, 1) * B(2, 2) * B(3, 3) - A(0, 0) * A(1, 1) * B(2, 3) * B(3, 2) - A(0, 0) * A(1, 2) * B(2, 1) * B(3, 3) 
         + A(0, 0) * A(1, 2) * B(2, 3) * B(3, 1) + A(0, 0) * A(1, 3) * B(2, 1) * B(3, 2) - A(0, 0) * A(1, 3) * B(2, 2) * B(3, 1) 
         - A(0, 0) * A(2, 1) * B(1, 2) * B(3, 3) + A(0, 0) * A(2, 1) * B(1, 3) * B(3, 2) + A(0, 0) * A(2, 2) * B(1, 1) * B(3, 3) 
         - A(0, 0) * A(2, 2) * B(1, 3) * B(3, 1) - A(0, 0) * A(2, 3) * B(1, 1) * B(3, 2) + A(0, 0) * A(2, 3) * B(1, 2) * B(3, 1) 
@@ -223,13 +228,13 @@ void RoughCircleSolver::translateEllipse(const Eigen::Matrix3d &ellipse_quad_for
 }
 void RoughCircleSolver::translateEllipse(const cv::RotatedRect &ellipse_cv_form, Eigen::Matrix3d &ellipse_quad_form)
 {
-    double a = ellipse_cv_form.size.width;
-    double b = ellipse_cv_form.size.height;
+    double a = ellipse_cv_form.size.width /2.0;
+    double b = ellipse_cv_form.size.height /2.0;
     double x_c = ellipse_cv_form.center.x;
     double y_c = ellipse_cv_form.center.y;
 
-    double sin_theta = sin(ellipse_cv_form.angle);
-    double cos_theta = cos(ellipse_cv_form.angle);
+    double sin_theta = sin(ellipse_cv_form.angle * M_PI / 180.0); // rotatedrect's angle is presented in degree
+    double cos_theta = cos(ellipse_cv_form.angle * M_PI / 180.0);
     double A = (a*a*sin_theta*sin_theta + b*b*cos_theta*cos_theta)/(a*a*b*b);
     double B = (-2*a*a*sin_theta*cos_theta + 2*b*b*sin_theta*cos_theta)/(a*a*b*b);
     double C = (a*a*cos_theta*cos_theta + b*b*sin_theta*sin_theta)/(a*a*b*b);
@@ -237,12 +242,41 @@ void RoughCircleSolver::translateEllipse(const cv::RotatedRect &ellipse_cv_form,
     double E = (2*a*a*x_c*sin_theta*cos_theta - 2*a*a*y_c*cos_theta*cos_theta - 2*b*b*x_c*sin_theta*cos_theta - 2*b*b*y_c*sin_theta*sin_theta)/(a*a*b*b);
     double F = (-a*a*b*b + a*a*x_c*x_c*sin_theta*sin_theta - 2*a*a*x_c*y_c*sin_theta*cos_theta + a*a*y_c*y_c*cos_theta*cos_theta + b*b*x_c*x_c*cos_theta*cos_theta + 2*b*b*x_c*y_c*sin_theta*cos_theta + b*b*y_c*y_c*sin_theta*sin_theta)/(a*a*b*b);
 
-    ellipse_quad_form << A, B / 2.0, D / 2.0, B / 2.0, C, E / 2.0, D / 2.0, E / 2.0, F;
+    ellipse_quad_form << A/F, B / 2.0/F, D / 2.0/F, B / 2.0/F, C/F, E / 2.0/F, D / 2.0/F, E / 2.0/F, 1.0;
+
+    //verify the translation
+    double alpha = 0.0;
+    cv::Mat image(stereo_cam_ptr->left.imageSize(), CV_8UC3, cv::Scalar(0,0,0));
+
+    for(; alpha < 2*M_PI; alpha += 0.1){// in rad
+        double x = a * cos(alpha) * cos_theta - b * sin(alpha) * sin_theta + x_c;
+        double y = a * cos(alpha) * sin_theta + b * sin(alpha) * cos_theta + y_c;
+
+        cv::ellipse(image, ellipse_cv_form, cv::Scalar(0, 0, 255), 1, CV_AA);
+
+        cv::Point point((int)x, (int)y);
+        cv::Point point_2((int)y, (int)x);
+
+        cv::circle(image,point,2,cv::Scalar(0,255,255),1);
+        cv::circle(image,point_2,2,cv::Scalar(0,255,255),1);
+
+        Eigen::Vector3d X;
+        X << x,y,1;
+        double result = X.transpose() * ellipse_quad_form * X;
+        std::cout<<"verification result: "<<result<<std::endl;
+    }
+
+
+    
 }
 
 void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d> &left_possible_ellipses,
                                    const std::vector<Eigen::Matrix3d> &right_possible_ellipses,
-                                   std::vector<Circle3D> &circles)
+                                   std::vector<Circle3D> &circles,
+                                   const std::vector<cv::RotatedRect>* left_ellipses_box_ptr,
+                                   const std::vector<cv::RotatedRect>* right_ellipses_box_ptr,
+                                   const cv::Mat* left_edge_ptr,
+                                   const cv::Mat* right_edge_ptr)
 {
     /**
      * pairs the ellipses from left/right camera and gives the circles in 3D coordinate.
@@ -260,17 +294,37 @@ void RoughCircleSolver::getCircles(const std::vector<Eigen::Matrix3d> &left_poss
     left_projection = stereo_cam_ptr->left.projectionEigenMatrix();
     right_projection = stereo_cam_ptr->right.projectionEigenMatrix();
 
+    cv::Mat left_edge, right_edge;
+    cv::cvtColor(*left_edge_ptr, left_edge, CV_GRAY2BGR);
+    cv::cvtColor(*right_edge_ptr, right_edge, CV_GRAY2BGR);
+
     for (int i = 0; i < left_possible_ellipses.size(); i++)
     {
         A = left_projection.transpose() * left_possible_ellipses[i] * left_projection;
         double min_error = std::numeric_limits<double>::max();
         int min_index = -1;
+        cv::cvtColor(*left_edge_ptr, left_edge, CV_GRAY2BGR);
+
+        ellipse(left_edge, (*left_ellipses_box_ptr)[i], cv::Scalar(0, 0, 255), 1, CV_AA);
+
         for (int j = 0; j < right_possible_ellipses.size(); j++)
         {
             B = right_projection.transpose() * right_possible_ellipses[j] * right_projection;
+            
+            //A << -0.0013, 0.4710e-5, -0.00023, 0.0058, 0.4710e-5, -0.000078, -0.00034, 0.0033, -0.00023, -0.00034, -0.0014, 0.011, 0.0058, 0.0033, 0.011, -0.038;
+            //B << 1.0, 0.0, 0.0, -9.0, 0.0, 1.0, 0.0, -2.0, 0.0, 0.0, 1.0, -10.0, -9.0, -2.0, -10.0, 85.0;
             double I_2, I_3, I_4;
             computeI2I3I4Analytic(A, B, I_2, I_3, I_4);
-            double curr_error = fabs(I_3 * I_3 - 4 * I_2 * I_4);
+
+            //double norm = std::min(std::min(fabs(I_2), fabs(I_3)), fabs(I_4));
+            //I_2 /= norm;
+            //I_3 /= norm;
+            //I_4 /= norm;
+            cv::cvtColor(*right_edge_ptr, right_edge, CV_GRAY2BGR);
+            ellipse(right_edge, (*right_ellipses_box_ptr)[j], cv::Scalar(0, 0, 255), 1, CV_AA);
+
+            double curr_error = fabs(I_3 * I_3 - 4 * I_2 * I_4)/pow(A.norm() * B.norm(),2);
+            std::cout<<"curr_error: "<<curr_error<<std::endl;
             if (curr_error < min_error)
             {
                 min_error = curr_error;
@@ -361,10 +415,14 @@ void RoughCircleSolver::getPossibleCircles(const cv::Mat &left_edge, const cv::M
      * @ param circles : the circles contained in the left/right image.
     */
     std::vector<Eigen::Matrix3d> left_ellipses_vec, right_ellipses_vec;
-    getPossibleEllipse(left_edge, left_ellipses_vec);
-    getPossibleEllipse(right_edge, right_ellipses_vec);
 
-    getCircles(left_ellipses_vec, right_ellipses_vec, circles);
+    std::vector<cv::RotatedRect> left_ellipses_box, right_ellipses_box;
+    getPossibleEllipse(left_edge, left_ellipses_vec, &left_ellipses_box);
+    getPossibleEllipse(right_edge, right_ellipses_vec, &right_ellipses_box);
+
+    getCircles(left_ellipses_vec, right_ellipses_vec, circles, 
+                &left_ellipses_box, &right_ellipses_box,
+                &left_edge, &right_edge);
 }
 
 void RoughCircleSolver::reprojectCircles(cv::Mat &image, const Circle3D &circle, int camera_id, int sample_size, const cv::Scalar &color)

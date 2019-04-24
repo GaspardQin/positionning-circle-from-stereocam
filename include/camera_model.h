@@ -31,6 +31,9 @@ public:
     const Eigen::Matrix<double, 3, 4> & projectionEigenMatrix(){
         return projection_mat;
     }
+    cv::Size imageSize() const{
+        return image_size;
+    }
 };
 
 
