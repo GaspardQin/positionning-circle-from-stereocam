@@ -35,7 +35,7 @@ public:
 
         transform.setIdentity();
         transform.block<3,3>(0,0) = R;
-        transform.block<3,1>(0,3) = -center.head(3);
+        transform.block<3,1>(0,3) = center.head(3);
     }
 
 };
@@ -58,7 +58,7 @@ class ConcentricCircles3D:public CirclePlane{
 public:
     double radius_inner;
     double radius_outer;
-    ConcentricCircles3D():Circle3D(){
+    ConcentricCircles3D():CirclePlane(){
         radius_inner = 0.0;
         radius_outer = 0.0;
     }
@@ -73,6 +73,15 @@ public:
         plane = (a.plane + b.plane)/2.0;
         radius_inner = a.radius;
         radius_outer = b.radius;
+    }
+    void splitToCircles(Circle3D circles[2]) const{
+        circles[0].center = center;
+        circles[0].radius = radius_inner;
+        circles[0].plane = plane;
+
+        circles[1].center = center;
+        circles[1].radius = radius_outer;
+        circles[1].plane = plane;
     }
 };
 #endif

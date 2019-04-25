@@ -18,6 +18,21 @@ void setCamera(std::shared_ptr<StereoCameraModel>& stereo_cam_ptr){
 	double right_distortion[5] = { -0.15815821923496060, -0.023252410765977595, -0.00088122276582216434, -0.00048619722968107478, 0.047581138754438562 };
     double right_projection[12] = {1376.915308200754, 2.002081978942329, 1088.671309797108, -169123.8601871156, -14.5707534390388, 1393.226512711618, 683.0201179347162, -157.3182194049588, -0.01682694049012899, -0.001009946069590211, 0.9998579069461211, -1.584014773188137};
 
+    Eigen::Matrix3d rot_mat;
+    rot_mat << 0.99985594561053415, 0.0022064006648113573, 0.016829136144518399, -0.0022230836705065750, 0.99999705589818755, 0.00097267360974158759,
+		-0.016826940490128992, -0.0010099460695902113, 0.99985790694612109;
+    Eigen::Vector3d translation_vec;
+    translation_vec << -120.02236830747624, 0.66187592661751726, -1.5840147731881373;
+    Eigen::Matrix4d transform_mat;
+    transform_mat.setIdentity();
+    transform_mat.block<3,3>(0,0) = rot_mat;
+    transform_mat.block<3,1>(0,3) = translation_vec;
+
+    double right_cam_transformation_coeffs[16];
+    Eigen::Map<Eigen::Matrix<double, 16, 1>> vec(transform_mat.transpose().data(), 16);
+    Eigen::Map<Eigen::Matrix<double, 16, 1>>(right_cam_transformation_coeffs, 16) = vec;
+
+    stereo_cam_ptr->init(right_cam_transformation_coeffs);
     stereo_cam_ptr->initLeft(left_intrinsic, left_distortion, left_projection, image_size);
     stereo_cam_ptr->initRight(right_intrinsic, right_distortion, right_projection, image_size);
 }
@@ -62,14 +77,17 @@ int main(int argc, char** argv) {
     right_edge = canny_bar_right.edge;
 
     RoughCircleSolver solver(stereo_cam_ptr);
-    std::vector<Circle3D> circles;
-    solver.getPossibleCircles(left_edge, right_edge, circles);
+    std::vector<ConcentricCircles3D> concentric_circles;
+    solver.getPossibleCircles(left_edge, right_edge, concentric_circles);
 
     cv::Mat left_show_image = left_rectified_image.clone();
     cv::Mat right_show_image = right_rectified_image.clone();
 
-    solver.reprojectCircles(left_show_image, circles, LEFT_CAMERA, 50, cv::Scalar(255,0,0));
-    solver.reprojectCircles(right_show_image, circles, RIGHT_CAMERA, 50, cv::Scalar(255,0,0));
+    solver.reprojectCircles(left_show_image, concentric_circles, LEFT_CAMERA, 500, cv::Scalar(255,0,0));
+    solver.reprojectCircles(right_show_image, concentric_circles, RIGHT_CAMERA, 500, cv::Scalar(255,0,0));
+    cv::namedWindow("left_reproject", 0);
+    cv::namedWindow("right_reproject", 0);
+
     cv::imshow("left_reproject", left_show_image);
     cv::imshow("right_reproject", right_show_image);
     cv::waitKey(0);

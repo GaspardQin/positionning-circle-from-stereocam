@@ -14,13 +14,14 @@ public:
 
     CameraModel(double intrinsic_coeffs[9], double distortion_coeffs[5], double projection_coeffs[12], int image_size_[2])
     {
-        init(intrinsic_coeffs,distortion_coeffs, projection_coeffs, image_size_);
+        init(intrinsic_coeffs,distortion_coeffs, projection_coeffs, image_size_); 
     }
 
     void init(double intrinsic_coeffs[9], double distortion_coeffs[5], double projection_coeffs[12], int image_size_[2]){
+        
         intrinsic_mat = cv::Mat(3, 3, CV_64F, intrinsic_coeffs).clone();
         distortion_mat = cv::Mat(1, 5, CV_64F, distortion_coeffs).clone();
-        projection_mat = Eigen::Matrix<double, 3, 4>(projection_coeffs);
+        projection_mat = Eigen::Map<Eigen::Matrix<double,3,4,Eigen::RowMajor> >(projection_coeffs); //col major
         image_size = cv::Size(image_size_[0], image_size_[1]);
         initUndistortRectifyMap(intrinsic_mat, distortion_mat, cv::Mat(), intrinsic_mat, image_size, CV_32FC1, rectified_map1, rectified_map2);
     }
@@ -31,6 +32,7 @@ public:
     const Eigen::Matrix<double, 3, 4> & projectionEigenMatrix(){
         return projection_mat;
     }
+
     cv::Size imageSize() const{
         return image_size;
     }
@@ -41,12 +43,20 @@ class StereoCameraModel{
 public:
     CameraModel left;
     CameraModel right;
+    Eigen::Matrix4d right_cam_transform_mat; // right camera's transform matrix comparing to the left camera 
+
     StereoCameraModel(){}
-    void initLeft(double intrinsic_coeffs[9], double distortion_coeffs[5], double projection_coeffs[12], int image_size_[2]){
+    void init(double right_cam_transformation_coeffs[16]){
+        right_cam_transform_mat = Eigen::Matrix4d(right_cam_transformation_coeffs);
+    }
+    void initLeft(double intrinsic_coeffs[9], double distortion_coeffs[5], double projection_coeffs[12], int image_size_[2]){  
         left.init(intrinsic_coeffs,distortion_coeffs, projection_coeffs, image_size_);
     }
     void initRight(double intrinsic_coeffs[9], double distortion_coeffs[5], double projection_coeffs[12], int image_size_[2]){
         right.init(intrinsic_coeffs,distortion_coeffs, projection_coeffs, image_size_);
+    }
+    const Eigen::Matrix4d& rightCamTransformEigenMatrix(){
+        return right_cam_transform_mat;
     }
 };
 
