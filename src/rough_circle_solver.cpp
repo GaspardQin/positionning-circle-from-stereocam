@@ -332,21 +332,33 @@ bool RoughCircleSolver::computeCircle3D(const cv::RotatedRect& left_ellipse_box,
     translateEllipse(left_ellipse_box, left_ellipse_quadratic);
     translateEllipse(right_ellipse_box, right_ellipse_quadratic);
 
+    /*
+    if(fabs(left_ellipse_box.angle - 65) < 0.01){
+        cv::RotatedRect left_ellipse_box_changed = left_ellipse_box;
+        left_ellipse_box_changed.angle = 59.2503;
+        translateEllipse(left_ellipse_box_changed, left_ellipse_quadratic);
+    }
+    */
+
+
     Eigen::Matrix<double, 3, 4> left_projection_matrix = stereo_cam_ptr->left.projectionEigenMatrix();
     Eigen::Matrix<double, 3, 4> right_projection_matrix = stereo_cam_ptr->right.projectionEigenMatrix();
-    std::cout<<"left_projection: "<<left_projection_matrix<<std::endl;
-    std::cout<<"right_projection: "<<right_projection_matrix<<std::endl;
+    std::cout<<"\n\n\nleft_projection: \n"<<left_projection_matrix<<std::endl;
+    std::cout<<"right_projection: \n"<<right_projection_matrix<<std::endl;
     Eigen::Matrix4d A = stereo_cam_ptr->left.projectionEigenMatrix().transpose() * left_ellipse_quadratic * stereo_cam_ptr->left.projectionEigenMatrix();
     Eigen::Matrix4d B = stereo_cam_ptr->right.projectionEigenMatrix().transpose() * right_ellipse_quadratic * stereo_cam_ptr->right.projectionEigenMatrix();
-    std::cout<<"A: "<<A<<std::endl;
-    std::cout<<"B: "<<B<<std::endl;
-    std::cout<<"left ellipse: "<<left_ellipse_quadratic<<std::endl;
-    std::cout<<"right ellipse: "<<right_ellipse_quadratic<<std::endl;
+    std::cout<<"left box: center: "<<left_ellipse_box.center.x<<" " <<left_ellipse_box.center.y<<" size: "<<left_ellipse_box.size.width <<" "<<left_ellipse_box.size.height <<" angle: "<<left_ellipse_box.angle<<std::endl;
+    std::cout<<"right box: center: "<<right_ellipse_box.center.x<<" " <<right_ellipse_box.center.y<<" size: "<<right_ellipse_box.size.width <<" "<<right_ellipse_box.size.height <<" angle: "<<right_ellipse_box.angle<<std::endl;
+
+    std::cout<<"A: \n"<<A<<std::endl;
+    std::cout<<"B: \n"<<B<<std::endl;
+    std::cout<<"left ellipse: \n"<<left_ellipse_quadratic<<std::endl;
+    std::cout<<"right ellipse: \n"<<right_ellipse_quadratic<<std::endl;
     
     // calculate the circle's pose
     Eigen::Matrix4d trans = stereo_cam_ptr->rightCamTransformEigenMatrix();
-    Eigen::Vector4d right_camera_origin = stereo_cam_ptr->rightCamTransformEigenMatrix().col(3);
-
+    Eigen::Vector4d right_camera_origin = - stereo_cam_ptr->rightCamTransformEigenMatrix().col(3);
+    right_camera_origin(3) = -right_camera_origin(3);
 
     computeI2I3I4Analytic(A, B, I_2, I_3, I_4);
     std::cout<<"I2: "<<I_2<<" I3: "<<I_3<<" I4: "<<I_4<<std::endl;
@@ -355,10 +367,8 @@ bool RoughCircleSolver::computeCircle3D(const cv::RotatedRect& left_ellipse_box,
 
     double lambda = -I_3 / (2 * I_2);
     Eigen::Matrix4d C = A + lambda * B;
-    std::cout<<"A: "<<A<<std::endl;
-    std::cout<<"B: "<<B<<std::endl;
 
-    std::cout<<"C: "<<C<<std::endl;
+    std::cout<<"C: \n"<<C<<std::endl;
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d> eigensolver(C);
     
     if (eigensolver.info() != Eigen::Success)
@@ -380,12 +390,16 @@ bool RoughCircleSolver::computeCircle3D(const cv::RotatedRect& left_ellipse_box,
 
     // find the plane of the circle
     Eigen::Vector4d p = std::sqrt(-eigen_values(0)) * eigensolver.eigenvectors().col(0) + std::sqrt(eigen_values(3)) * eigensolver.eigenvectors().col(3);
-    std::cout<<"p.dot(p - right_camera_origin) = "<<p.dot(p - right_camera_origin)<<std::endl;
-    if (p.dot(p - right_camera_origin) < 0)
+    if (p(3) * p.dot(right_camera_origin) < 0)
     {
-        p = -std::sqrt(-eigen_values(0)) * eigensolver.eigenvectors().col(0) + std::sqrt(eigen_values(3)) * eigensolver.eigenvectors().col(3);
+        p =  std::sqrt(-eigen_values(0)) * eigensolver.eigenvectors().col(0) - std::sqrt(eigen_values(3)) * eigensolver.eigenvectors().col(3);
+    }
+    // convention: p(3) > 0 , in our case, it can't be zero
+    if(p(3) < 0){
+        p = -p;
     }
 
+    std::cout<<"plane :"<<p.transpose()<<std::endl;
     // find the center of the circle
     // Here, we assume the center of the circle is also the center of the ellipse in the image.
     double center_x = left_ellipse_box.center.x;
