@@ -330,12 +330,13 @@ bool RoughCircleSolver::computeCircle3D(const cv::RotatedRect& left_ellipse_box,
     translateEllipse(left_ellipse_box, left_ellipse_quadratic);
     translateEllipse(right_ellipse_box, right_ellipse_quadratic);
 
+    /*
     if(fabs(left_ellipse_box.angle - 65) < 0.01){
         cv::RotatedRect left_ellipse_box_changed = left_ellipse_box;
         left_ellipse_box_changed.angle = 59.2503;
         translateEllipse(left_ellipse_box_changed, left_ellipse_quadratic);
     }
-
+    */
 
 
     Eigen::Matrix<double, 3, 4> left_projection_matrix = stereo_cam_ptr->left.projectionEigenMatrix();
@@ -354,8 +355,8 @@ bool RoughCircleSolver::computeCircle3D(const cv::RotatedRect& left_ellipse_box,
     
     // calculate the circle's pose
     Eigen::Matrix4d trans = stereo_cam_ptr->rightCamTransformEigenMatrix();
-    Eigen::Vector4d right_camera_origin = stereo_cam_ptr->rightCamTransformEigenMatrix().col(3);
-
+    Eigen::Vector4d right_camera_origin = - stereo_cam_ptr->rightCamTransformEigenMatrix().col(3);
+    right_camera_origin(3) = -right_camera_origin(3);
 
     computeI2I3I4Analytic(A, B, I_2, I_3, I_4);
     std::cout<<"I2: "<<I_2<<" I3: "<<I_3<<" I4: "<<I_4<<std::endl;
@@ -389,9 +390,14 @@ bool RoughCircleSolver::computeCircle3D(const cv::RotatedRect& left_ellipse_box,
     Eigen::Vector4d p = std::sqrt(-eigen_values(0)) * eigensolver.eigenvectors().col(0) + std::sqrt(eigen_values(3)) * eigensolver.eigenvectors().col(3);
     if (p(3) * p.dot(right_camera_origin) < 0)
     {
-        p = - std::sqrt(-eigen_values(0)) * eigensolver.eigenvectors().col(0) + std::sqrt(eigen_values(3)) * eigensolver.eigenvectors().col(3);
+        p =  std::sqrt(-eigen_values(0)) * eigensolver.eigenvectors().col(0) - std::sqrt(eigen_values(3)) * eigensolver.eigenvectors().col(3);
+    }
+    // convention: p(3) > 0 , in our case, it can't be zero
+    if(p(3) < 0){
+        p = -p;
     }
 
+    std::cout<<"plane :"<<p.transpose()<<std::endl;
     // find the center of the circle
     // Here, we assume the center of the circle is also the center of the ellipse in the image.
     double center_x = left_ellipse_box.center.x;
