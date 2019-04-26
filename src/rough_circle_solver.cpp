@@ -25,12 +25,12 @@ void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vecto
     const double min_area_threshold = 2000; // the threshold of minimum area of the ellipse
 
 
-    std::vector<cv::RotatedRect> all_ellipses;
+    std::vector<FittedEllipse> all_ellipses;
     for (int i = 0; i < contours.size(); i++)
     {
 
 #ifdef DEBUG
-        cv::drawContours(show_img, contours, i, cv::Scalar(0, 255, 0), 1);
+        //cv::drawContours(show_img, contours, i, cv::Scalar(0, 255, 0), 1);
 #endif
         int count = contours[i].size();
         if (count < 6)
@@ -46,44 +46,103 @@ void RoughCircleSolver::getPossibleEllipse(const cv::Mat &edge_input, std::vecto
 #ifdef DEBUG
         cv::ellipse(show_img, box, cv::Scalar(0, 0, 255), 1, CV_AA);
 #endif //DEBUG
+        FittedEllipse fitted_ellipse(i, box);
+        fitted_ellipse.cover(contours[i]);
+        all_ellipses.push_back(fitted_ellipse);
+    }
 
-        all_ellipses.push_back(box);
+    std::vector<cv::RotatedRect> filtered_ellipses;
+    // try to fuse the seperated components of the same ellipse
+    std::vector<bool> fused(all_ellipses.size());
+    for(int i=0; i<all_ellipses.size(); i++){
+        for(int j=i+1; j<all_ellipses.size(); j++){
+            if(fused[j]) continue;
+
+            cv::cvtColor(edge_input, show_img, CV_GRAY2BGR);
+            cv::drawContours(show_img, contours, all_ellipses[i].id, cv::Scalar(0, 255, 0), 1);
+            cv::drawContours(show_img, contours, all_ellipses[j].id, cv::Scalar(0, 255, 0), 1);
+            if(all_ellipses[i].hasOverlap(all_ellipses[j])) continue; // can't belong to the same ellipse
+            std::vector<cv::Point> fused_contours;
+            fused_contours = contours[all_ellipses[i].id];
+            fused_contours.insert(fused_contours.end(), contours[all_ellipses[j].id].begin(), contours[all_ellipses[j].id].end());
+            cv::RotatedRect fused_box = fitEllipse(fused_contours);
+            double error = getAlgebraDistance(fused_box, fused_contours)/(double)(fused_contours.size());
+
+            #ifdef DEBUG
+
+            cv::ellipse(show_img, fused_box, cv::Scalar(0, 255, 255), 1, CV_AA);
+
+            #endif //DEBUG
+
+            if(error < 0.01){
+                all_ellipses[i].possible_other_parts_id.push_back(all_ellipses[j].id); 
+                fused[j] = true;
+            } 
+        }    
+    }
+
+    for(int i=0; i<all_ellipses.size(); i++){
+        cv::ellipse(show_img, all_ellipses[i].box, cv::Scalar(255, 255, 0), 1, CV_AA);
+
+        if(fused[i]) continue;
+        if(all_ellipses[i].possible_other_parts_id.size() == 0){
+            cv::ellipse(show_img, all_ellipses[i].box, cv::Scalar(255, 0, 0), 1, CV_AA);
+
+            filtered_ellipses.push_back(all_ellipses[i].box);
+        }
+        else{
+            std::vector<cv::Point> fused_contours;
+            fused_contours = contours[all_ellipses[i].id];
+            for(int other_idx=0; other_idx<all_ellipses[i].possible_other_parts_id.size(); other_idx ++){
+                int id = all_ellipses[i].possible_other_parts_id[other_idx]; // contour's index
+                fused_contours.insert(fused_contours.end(), contours[id].begin(), contours[id].end());
+            } 
+            cv::RotatedRect fused_box = fitEllipse(fused_contours);
+            cv::ellipse(show_img, fused_box, cv::Scalar(255, 0, 0), 1, CV_AA);
+
+            filtered_ellipses.push_back(fused_box);
+        }
 
     }
 
+    
+
+
     // check whether there are two circles with the same center
-    for(int i=0; i<all_ellipses.size(); i++){
-        for(int j=i+1; j<all_ellipses.size(); j++){
+    for(int i=0; i<filtered_ellipses.size(); i++){
+        for(int j=i+1; j<filtered_ellipses.size(); j++){
             // check the centers
-            if(fabs(all_ellipses[j].center.x -  all_ellipses[i].center.x) > 5 || fabs(all_ellipses[j].center.y - all_ellipses[j].center.y) > 5) continue;
+            if(fabs(filtered_ellipses[j].center.x -  filtered_ellipses[i].center.x) > 5 || fabs(filtered_ellipses[j].center.y - filtered_ellipses[j].center.y) > 5) continue;
 
             // check the flatten ratio
-            double flatten_ratio_i = std::max(all_ellipses[i].size.width, all_ellipses[i].size.height) / std::min(all_ellipses[i].size.width, all_ellipses[i].size.height);
-            double flatten_ratio_j = std::max(all_ellipses[j].size.width, all_ellipses[j].size.height) / std::min(all_ellipses[j].size.width, all_ellipses[j].size.height);
+            double flatten_ratio_i = std::max(filtered_ellipses[i].size.width, filtered_ellipses[i].size.height) / std::min(filtered_ellipses[i].size.width, filtered_ellipses[i].size.height);
+            double flatten_ratio_j = std::max(filtered_ellipses[j].size.width, filtered_ellipses[j].size.height) / std::min(filtered_ellipses[j].size.width, filtered_ellipses[j].size.height);
             if(fabs(flatten_ratio_i - flatten_ratio_j) > 0.2) continue;
 
             // check the angle (only if flatten ratio is higher than a threshold, otherwise the ellipses are circle, which makes angle with no sense)
             if (std::min(flatten_ratio_i, flatten_ratio_j) > 1.2){
-                if(fabs(all_ellipses[i].angle - all_ellipses[j].angle) > 10) continue; //degree
+                if(fabs(filtered_ellipses[i].angle - filtered_ellipses[j].angle) > 10) continue; //degree
             }
 
             // chech the radius
-            double rad_i = (all_ellipses[i].size.width + all_ellipses[j].size.height)/4;
-            double rad_j = (all_ellipses[j].size.width + all_ellipses[j].size.height)/4;
-            if(isIn(rad_i/rad_j,  0.6, 0.9)){
-                ellipses_vec.push_back(std::make_pair(all_ellipses[i], all_ellipses[j]));
+            double rad_i = (filtered_ellipses[i].size.width + filtered_ellipses[j].size.height)/4;
+            double rad_j = (filtered_ellipses[j].size.width + filtered_ellipses[j].size.height)/4;
+            if(isIn(rad_i/rad_j,  0.5, 0.9)){
+                ellipses_vec.push_back(std::make_pair(filtered_ellipses[i], filtered_ellipses[j]));
 
                 #ifdef DEBUG
-                    cv::ellipse(show_img, all_ellipses[i], cv::Scalar(255, 0, 255), 1, CV_AA);
-                    cv::ellipse(show_img, all_ellipses[j], cv::Scalar(255, 0, 0), 1, CV_AA);
+                    cv::cvtColor(edge_input, show_img, CV_GRAY2BGR);
+                    cv::ellipse(show_img, filtered_ellipses[i], cv::Scalar(255, 0, 255), 1, CV_AA);
+                    cv::ellipse(show_img, filtered_ellipses[j], cv::Scalar(255, 0, 0), 1, CV_AA);
                 #endif
             }
-            else if(isIn(rad_j/rad_i, 1.1, 1.4)){
-                ellipses_vec.push_back(std::make_pair(all_ellipses[j], all_ellipses[i]));
+            else if(isIn(rad_j/rad_i, 0.5, 0.9)){
+                ellipses_vec.push_back(std::make_pair(filtered_ellipses[j], filtered_ellipses[i]));
 
                 #ifdef DEBUG
-                    cv::ellipse(show_img, all_ellipses[j], cv::Scalar(255, 0, 255), 1, CV_AA);
-                    cv::ellipse(show_img, all_ellipses[i], cv::Scalar(255, 0, 0), 1, CV_AA);
+                    cv::cvtColor(edge_input, show_img, CV_GRAY2BGR);
+                    cv::ellipse(show_img, filtered_ellipses[j], cv::Scalar(255, 0, 255), 1, CV_AA);
+                    cv::ellipse(show_img, filtered_ellipses[i], cv::Scalar(255, 0, 0), 1, CV_AA);
                 #endif
             }
 
@@ -266,64 +325,7 @@ void RoughCircleSolver::computePointsInPlane(const double &u, const double &v, c
     
     std::cout << A_full * point <<std::endl;
 }
-void RoughCircleSolver::translateEllipse(const Eigen::Matrix3d &ellipse_quad_form, cv::RotatedRect &ellipse_cv_form)
-{
-    double A = ellipse_quad_form(0, 0);
-    double D = 2 * ellipse_quad_form(0, 2);
-    double C = ellipse_quad_form(1, 1);
-    double E = 2 * ellipse_quad_form(1, 2);
-    double F = ellipse_quad_form(2, 2);
 
-    ellipse_cv_form.center.x = -D / (2 * A);
-    ellipse_cv_form.center.y = -E / (2 * C);
-    double k = (F + 1) / (D * D / 4 / A + E * E / 4 / C);
-    ellipse_cv_form.size.width = std::sqrt(1 / k / A);
-    ellipse_cv_form.size.height = std::sqrt(1 / k / C);
-}
-void RoughCircleSolver::translateEllipse(const cv::RotatedRect &ellipse_cv_form, Eigen::Matrix3d &ellipse_quad_form)
-{
-    double a = ellipse_cv_form.size.width /2.0;
-    double b = ellipse_cv_form.size.height /2.0;
-    double x_c = ellipse_cv_form.center.x;
-    double y_c = ellipse_cv_form.center.y;
-
-    double sin_theta = sin(ellipse_cv_form.angle * M_PI / 180.0); // rotatedrect's angle is presented in degree
-    double cos_theta = cos(ellipse_cv_form.angle * M_PI / 180.0);
-    double A = (a*a*sin_theta*sin_theta + b*b*cos_theta*cos_theta)/(a*a*b*b);
-    double B = (-2*a*a*sin_theta*cos_theta + 2*b*b*sin_theta*cos_theta)/(a*a*b*b);
-    double C = (a*a*cos_theta*cos_theta + b*b*sin_theta*sin_theta)/(a*a*b*b);
-    double D = (-2*a*a*x_c*sin_theta*sin_theta + 2*a*a*y_c*sin_theta*cos_theta - 2*b*b*x_c*cos_theta*cos_theta - 2*b*b*y_c*sin_theta*cos_theta)/(a*a*b*b);
-    double E = (2*a*a*x_c*sin_theta*cos_theta - 2*a*a*y_c*cos_theta*cos_theta - 2*b*b*x_c*sin_theta*cos_theta - 2*b*b*y_c*sin_theta*sin_theta)/(a*a*b*b);
-    double F = (-a*a*b*b + a*a*x_c*x_c*sin_theta*sin_theta - 2*a*a*x_c*y_c*sin_theta*cos_theta + a*a*y_c*y_c*cos_theta*cos_theta + b*b*x_c*x_c*cos_theta*cos_theta + 2*b*b*x_c*y_c*sin_theta*cos_theta + b*b*y_c*y_c*sin_theta*sin_theta)/(a*a*b*b);
-
-    ellipse_quad_form << A/F, B / 2.0/F, D / 2.0/F, B / 2.0/F, C/F, E / 2.0/F, D / 2.0/F, E / 2.0/F, 1.0;
-
-    /*
-    //verify the translation
-    double alpha = 0.0;
-    cv::Mat image(stereo_cam_ptr->left.imageSize(), CV_8UC3, cv::Scalar(0,0,0));
-
-    for(; alpha < 2*M_PI; alpha += 0.1){// in rad
-        double x = a * cos(alpha) * cos_theta - b * sin(alpha) * sin_theta + x_c;
-        double y = a * cos(alpha) * sin_theta + b * sin(alpha) * cos_theta + y_c;
-
-        cv::ellipse(image, ellipse_cv_form, cv::Scalar(0, 0, 255), 1, CV_AA);
-
-        cv::Point point((int)x, (int)y);
-        cv::Point point_2((int)y, (int)x);
-
-        cv::circle(image,point,2,cv::Scalar(0,255,255),1);
-        cv::circle(image,point_2,2,cv::Scalar(0,255,255),1);
-
-        Eigen::Vector3d X;
-        X << x,y,1;
-        double result = X.transpose() * ellipse_quad_form * X;
-        std::cout<<"verification result: "<<result<<std::endl;
-    }
-
-    */
-    
-}
 bool RoughCircleSolver::computeCircle3D(const cv::RotatedRect& left_ellipse_box, const cv::RotatedRect& right_ellipse_box, Circle3D& circle){
     double I_2, I_3, I_4;
     Eigen::Matrix3d left_ellipse_quadratic, right_ellipse_quadratic;
@@ -378,9 +380,10 @@ bool RoughCircleSolver::computeCircle3D(const cv::RotatedRect& left_ellipse_box,
 
     // find the plane of the circle
     Eigen::Vector4d p = std::sqrt(-eigen_values(0)) * eigensolver.eigenvectors().col(0) + std::sqrt(eigen_values(3)) * eigensolver.eigenvectors().col(3);
+    std::cout<<"p.dot(p - right_camera_origin) = "<<p.dot(p - right_camera_origin)<<std::endl;
     if (p.dot(p - right_camera_origin) < 0)
     {
-        p = std::sqrt(-eigen_values(0)) * eigensolver.eigenvectors().col(0) - std::sqrt(eigen_values(3)) * eigensolver.eigenvectors().col(3);
+        p = -std::sqrt(-eigen_values(0)) * eigensolver.eigenvectors().col(0) + std::sqrt(eigen_values(3)) * eigensolver.eigenvectors().col(3);
     }
 
     // find the center of the circle
@@ -450,6 +453,8 @@ void RoughCircleSolver::getConcentricCircles(const std::vector<std::pair<cv::Rot
             cv::ellipse(right_edge, std::get<0>(right_possible_ellipses[j]), cv::Scalar(0, 0, 255), 1, CV_AA);
 
             computeCircle3D(std::get<0>(left_possible_ellipses[i]), std::get<0>(right_possible_ellipses[j]), circle_inner);
+            cv::ellipse(left_edge, std::get<1>(left_possible_ellipses[i]), cv::Scalar(0, 0, 255), 1, CV_AA);
+            cv::ellipse(right_edge, std::get<1>(right_possible_ellipses[j]), cv::Scalar(0, 0, 255), 1, CV_AA);
 
             computeCircle3D(std::get<1>(left_possible_ellipses[i]), std::get<1>(right_possible_ellipses[j]), circle_outer);
 

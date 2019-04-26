@@ -10,6 +10,7 @@
 */
 #include "camera_model.h"
 #include "circle_model.h"
+#include "base_circle_solver.h"
 #include <memory>
 #include <vector>
 #include <limits>
@@ -20,7 +21,7 @@
 
 #define DEBUG
 
-class RoughCircleSolver{
+class RoughCircleSolver: public BaseCircleSolver{
 private:
     #define LEFT_CAMERA 0
     #define RIGHT_CAMERA 1
@@ -46,8 +47,7 @@ private:
     void computeI2I3I4Analytic(const Eigen::Matrix4d &A, const Eigen::Matrix4d &B, double &I_2, double &I_3, double &I_4);
 
     void computePointsInPlane(const double &u, const double &v, const Eigen::Vector4d &plane, Eigen::Vector4d &point, int camera_id);
-    void translateEllipse(const Eigen::Matrix3d& ellipse_quad_form, cv::RotatedRect& ellipse_cv_form);
-    void translateEllipse(const cv::RotatedRect& ellipse_cv_form, Eigen::Matrix3d& ellipse_quad_form);
+    
     bool areConcentric(const Circle3D a, const Circle3D b, double center_threshold);
     void getConcentricCircles(const std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>> &left_possible_ellipses,
                                    const std::vector<std::pair<cv::RotatedRect, cv::RotatedRect>> &right_possible_ellipses,
