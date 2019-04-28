@@ -1,5 +1,6 @@
 #include <iostream>
 #include "rough_circle_solver.h"
+#include "precise_circle_solver.h"
 #include "track_bar.h"
 
 #include <string>
@@ -80,11 +81,15 @@ int main(int argc, char** argv) {
     std::vector<ConcentricCircles3D> concentric_circles;
     solver.getPossibleCircles(left_edge, right_edge, concentric_circles);
 
+    PreciseTwoConcentricCirclesSolver precise_solver(stereo_cam_ptr);
+    precise_solver.init(concentric_circles[0], left_edge, right_edge, 50);
+    ConcentricCircles3D result_concentric_circle;
+    precise_solver.solve(result_concentric_circle);
+
     cv::Mat left_show_image = left_rectified_image.clone();
     cv::Mat right_show_image = right_rectified_image.clone();
-
-    solver.reprojectCircles(left_show_image, concentric_circles, LEFT_CAMERA, 500, cv::Scalar(255,0,0));
-    solver.reprojectCircles(right_show_image, concentric_circles, RIGHT_CAMERA, 500, cv::Scalar(255,0,0));
+    solver.reprojectCircles(left_show_image, result_concentric_circle, LEFT_CAMERA, 500, cv::Scalar(255,0,0));
+    solver.reprojectCircles(right_show_image, result_concentric_circle, RIGHT_CAMERA, 500, cv::Scalar(255,0,0));
     cv::namedWindow("left_reproject", 0);
     cv::namedWindow("right_reproject", 0);
 

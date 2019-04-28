@@ -11,7 +11,6 @@
 #include "camera_model.h"
 #include "circle_model.h"
 #include "base_circle_solver.h"
-#include <memory>
 #include <vector>
 #include <limits>
 #include <tuple>
@@ -23,12 +22,9 @@
 
 class RoughCircleSolver: public BaseCircleSolver{
 private:
-    #define LEFT_CAMERA 0
-    #define RIGHT_CAMERA 1
-    std::shared_ptr<StereoCameraModel> stereo_cam_ptr;
     
 public:
-    RoughCircleSolver(std::shared_ptr<StereoCameraModel>& stereo_cam_ptr_):stereo_cam_ptr(stereo_cam_ptr_){
+    RoughCircleSolver(std::shared_ptr<StereoCameraModel>& stereo_cam_ptr_):BaseCircleSolver(stereo_cam_ptr_){
     }
 
     void getPossibleCircles(const cv::Mat &left_edge, const cv::Mat &right_edge, std::vector<ConcentricCircles3D> &concentric_circles);

@@ -2,6 +2,7 @@
 #define __BASE_CIRCLE_SOLVER_H__
 #include <opencv2/opencv.hpp>
 #include <Eigen/Dense>
+#include <memory>
 #include <bitset>
 class FittedEllipse{
 public:
@@ -34,6 +35,11 @@ public:
 
 class BaseCircleSolver{
 protected:
+
+    #define LEFT_CAMERA 0
+    #define RIGHT_CAMERA 1
+    std::shared_ptr<StereoCameraModel> stereo_cam_ptr;
+
     void inline getEllipseParams(const cv::RotatedRect& ellipse_cv_form, double& a, double&b ,double &x_c, double &y_c, double& sin_theta, double& cos_theta){
         a = ellipse_cv_form.size.width /2.0;
         b = ellipse_cv_form.size.height /2.0;
@@ -95,7 +101,7 @@ protected:
 
 
 public:
-    BaseCircleSolver(){}
+    BaseCircleSolver(std::shared_ptr<StereoCameraModel>& stereo_cam_ptr_):stereo_cam_ptr(stereo_cam_ptr_){};
 };
 
 
