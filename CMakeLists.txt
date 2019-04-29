@@ -6,7 +6,10 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(Ceres REQUIRED)
 
+
+include_directories(${CERES_INCLUDE_DIRS})
 include_directories(/usr/include/eigen3/)
 include_directories(${EIGEN3_INCLUDE_DIR}/eigen3)
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -22,7 +25,7 @@ link_directories(${OpenCV_LIB_DIR})
 link_directories(${EIGEN3_LIBRARY_DIRS})
 
 add_executable(demo main_demo.cpp)
-target_link_libraries (demo rough_circle_solver ${OpenCV_LIBS}  ${EIGEN3_LIBRARIES})
+target_link_libraries (demo rough_circle_solver ${OpenCV_LIBS}  ${EIGEN3_LIBRARIES} ${CERES_LIBRARIES})
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

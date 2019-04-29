@@ -38,6 +38,7 @@ protected:
 
     #define LEFT_CAMERA 0
     #define RIGHT_CAMERA 1
+    
     std::shared_ptr<StereoCameraModel> stereo_cam_ptr;
 
     void inline getEllipseParams(const cv::RotatedRect& ellipse_cv_form, double& a, double&b ,double &x_c, double &y_c, double& sin_theta, double& cos_theta){
