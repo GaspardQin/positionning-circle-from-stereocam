@@ -63,8 +63,8 @@ public:
         double incr_angle = M_PI * 2 / num_points;
         Eigen::VectorXd params = init_circle.getParams();
         translateParam(params[3], params[4], params[5], init_rot);
-        params(3) = 0.5;
-        params(4) = 0.1;
+        params(3) = 0.0;
+        params(4) = 0.0;
         params(5) = 0.0;
         double x[8];
 
@@ -74,7 +74,7 @@ public:
         for(int i=0; i<num_points; i++){
             double theta = (double)i * incr_angle; 
             ceres::CostFunction* cost_function;
-            /*
+            
             cost_function =
                 new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::RIDDERS, 1, 8>(new EdgeMinimalDistance(theta, LEFT_CAMERA, INNER_CIRCLE, this));
             problem.AddResidualBlock(cost_function, loss, x);
@@ -86,7 +86,7 @@ public:
             cost_function =
                 new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::RIDDERS, 1, 8>(new EdgeMinimalDistance(theta, RIGHT_CAMERA, INNER_CIRCLE, this));
             problem.AddResidualBlock(cost_function, loss, x);
-            */
+            
             cost_function =
                 new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::RIDDERS, 1, 8>(new EdgeMinimalDistance(theta, RIGHT_CAMERA, OUTER_CIRCLE, this));
             problem.AddResidualBlock(cost_function, loss, x);
@@ -166,9 +166,6 @@ public:
             }
             
             residual[0] = std::sqrt(dists[0]);
-            if(residual[0] < 50){
-                std::cout<<"residual "<< residual[0]<<std::endl;
-            }
             residual[0] = (residual[0] < 50.0)? residual[0]: 50.0;
             //residual[0] = residual[0] * residual[0];
             if(std::isnan(residual[0])){
@@ -195,7 +192,7 @@ private:
     void normalize(Eigen::Vector3d& v){
         v(0) /= v(2);
         v(1) /= v(2);
-        v(2) = 0;
+        v(2) = 1.0;
     }
 public:
     PreciseTwoConcentricCirclesSolver(std::shared_ptr<StereoCameraModel>& stereo_cam_ptr_):PreciseCircleSolverBaseImpl(stereo_cam_ptr_){};
@@ -204,21 +201,27 @@ public:
 
         Eigen::Matrix4d transform;
         translateParam(param, transform);
-        transform.block<3,3>(0,0) = init_rot * transform.block<3,3>(0,0).eval();
-        project_point = stereo_cam_ptr->left.projection_mat * transform * point_in_plane;
+        Eigen::Matrix4d init_transform;
+        init_transform.setIdentity();
+        init_transform.block<3,3>(0,0) = init_rot;
+        project_point = stereo_cam_ptr->left.projection_mat * transform *init_transform* point_in_plane;
         normalize(project_point);
     }
     virtual void getReprojectPointRight(const EigenVector8d& param, const Eigen::Matrix3d& init_rot, const Eigen::Vector4d& point_in_plane,  Eigen::Vector3d& project_point){
 
         Eigen::Matrix4d transform;
         translateParam(param, transform);
-        transform.block<3,3>(0,0) = init_rot * transform.block<3,3>(0,0).eval();
-        project_point = stereo_cam_ptr->right.projection_mat * transform * point_in_plane;
+        Eigen::Matrix4d init_transform;
+        init_transform.setIdentity();
+        init_transform.block<3,3>(0,0) = init_rot;
+        
+        project_point = stereo_cam_ptr->right.projection_mat  * transform *init_transform* point_in_plane;
         normalize(project_point);
     }
 
     
     void translateParam(const EigenVector8d& param, Eigen::Matrix4d& transform){
+        transform.setIdentity();
         Eigen::Matrix3d rot = Eigen::AngleAxisd(param(3), Eigen::Vector3d::UnitX()).toRotationMatrix()
           * Eigen::AngleAxisd(param(4), Eigen::Vector3d::UnitY()).toRotationMatrix()
           * Eigen::AngleAxisd(param(5), Eigen::Vector3d::UnitZ()).toRotationMatrix();
