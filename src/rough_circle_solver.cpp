@@ -530,7 +530,11 @@ void RoughCircleSolver::reprojectCircles(cv::Mat &image, const Circle3D &circle,
     }
 
     circle.getTransformMatrixToOrigin(transform_circle_to_camera);
-
+    cv::Vec3b color_vec3b;
+    color_vec3b[0] = color[0];
+    color_vec3b[1] = color[1];
+    color_vec3b[2] = color[2];
+    
     for (int i = 0; i < sample_size; i++)
     {
         Eigen::Vector4d point_in_circle_coord; // the point on the circle, which is presented in the circle coordinate. (origin is the circle's center)
@@ -549,7 +553,9 @@ void RoughCircleSolver::reprojectCircles(cv::Mat &image, const Circle3D &circle,
 
         // draw points on the image
         cv::Point point((int)pixel_pos(0), (int)pixel_pos(1));    
-        cv::circle(image,point,2,color,1);
+        //cv::circle(image,point,2,color,1);
+        image.at<cv::Vec3b>(point) = color_vec3b;
+
     }
 }
 

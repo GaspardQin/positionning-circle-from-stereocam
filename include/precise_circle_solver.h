@@ -38,6 +38,7 @@ public:
         edge_left = edge_left_input;
         edge_right = edge_right_input;
         init_circle = init_circle_input; 
+ 
 
         n_point = n_point_input;
 
@@ -62,8 +63,8 @@ public:
         double incr_angle = M_PI * 2 / num_points;
         Eigen::VectorXd params = init_circle.getParams();
         translateParam(params[3], params[4], params[5], init_rot);
-        params(3) = 0.0;
-        params(4) = 0.0;
+        params(3) = 0.5;
+        params(4) = 0.1;
         params(5) = 0.0;
         double x[8];
 
@@ -71,22 +72,25 @@ public:
             x[i] = params(i);
         }
         for(int i=0; i<num_points; i++){
-            double theta = i * incr_angle;
-            ceres::CostFunction* cost_function =
-                new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::CENTRAL, 1, 8>(new EdgeMinimalDistance(theta, LEFT_CAMERA, INNER_CIRCLE, this));
-            problem.AddResidualBlock(cost_function, loss, x);
-
+            double theta = (double)i * incr_angle; 
+            ceres::CostFunction* cost_function;
+            /*
             cost_function =
-                new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::CENTRAL, 1, 8>(new EdgeMinimalDistance(theta, LEFT_CAMERA, OUTER_CIRCLE, this));
+                new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::RIDDERS, 1, 8>(new EdgeMinimalDistance(theta, LEFT_CAMERA, INNER_CIRCLE, this));
             problem.AddResidualBlock(cost_function, loss, x);
-
+            
             cost_function =
-                new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::CENTRAL, 1, 8>(new EdgeMinimalDistance(theta, RIGHT_CAMERA, INNER_CIRCLE, this));
+                new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::RIDDERS, 1, 8>(new EdgeMinimalDistance(theta, LEFT_CAMERA, OUTER_CIRCLE, this));
             problem.AddResidualBlock(cost_function, loss, x);
-
+            
             cost_function =
-                new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::CENTRAL, 1, 8>(new EdgeMinimalDistance(theta, RIGHT_CAMERA, OUTER_CIRCLE, this));
+                new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::RIDDERS, 1, 8>(new EdgeMinimalDistance(theta, RIGHT_CAMERA, INNER_CIRCLE, this));
             problem.AddResidualBlock(cost_function, loss, x);
+            */
+            cost_function =
+                new ceres::NumericDiffCostFunction<EdgeMinimalDistance, ceres::RIDDERS, 1, 8>(new EdgeMinimalDistance(theta, RIGHT_CAMERA, OUTER_CIRCLE, this));
+            problem.AddResidualBlock(cost_function, loss, x);
+            
         }
 
 
@@ -132,7 +136,9 @@ public:
 
     struct EdgeMinimalDistance {
         EdgeMinimalDistance(double theta_input, int camera_id_input, int circle_id_input, PreciseCircleSolverBaseImpl* solver_ptr_input)
-        :solver_ptr(solver_ptr_input), theta(theta_input), camera_id(camera_id_input), circle_id(circle_id_input){};
+        :solver_ptr(solver_ptr_input), camera_id(camera_id_input), circle_id(circle_id_input){
+            theta = theta_input;
+        };
         bool operator()(const double* const x, double* residual) const {
             Eigen::Vector3d project_point;
             EigenVector8d param;
@@ -160,7 +166,11 @@ public:
             }
             
             residual[0] = std::sqrt(dists[0]);
-            //residual[0] = (residual[0] < 5.0)? residual[0]: 5.0;
+            if(residual[0] < 50){
+                std::cout<<"residual "<< residual[0]<<std::endl;
+            }
+            residual[0] = (residual[0] < 50.0)? residual[0]: 50.0;
+            //residual[0] = residual[0] * residual[0];
             if(std::isnan(residual[0])){
                 std::cout<<"nan!!!"<<std::endl;
                 if(camera_id == LEFT_CAMERA){
