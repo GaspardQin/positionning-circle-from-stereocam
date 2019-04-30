@@ -8,9 +8,8 @@ class FittedEllipse{
 public:
     int id;
     cv::RotatedRect box;
-    std::bitset<12> cover_area; //divide an ellipse into 12 components (30 degrees per each), 
-                        // if the contour covers some components, then the corresponding cover_area will be true, otherwise false
-    
+    double theta_init; // 0 to 2*pi, first theta value of an arc
+    double theta_length; // 0 to 2*pi, length of an arc
     std::vector<int> possible_other_parts_id;
 
     FittedEllipse(int ellipse_id, cv::RotatedRect& ellipse_box)
@@ -18,18 +17,53 @@ public:
     {
     }
     void cover(const std::vector<cv::Point>& points){
-        for(int i=0; i<points.size(); i++){
-            double angle = std::atan2(points[i].y-box.center.y, points[i].x-box.center.x) + M_PI; // angle is between 0 to 2*pi
-            cover_area[ (int)(angle/ M_PI * 6)] = 1;
+        double angle = std::atan2(points[0].y-box.center.y, points[0].x-box.center.x) + M_PI; // angle is between 0 to 2*pi
+        theta_init = angle;
+        theta_length = 0;
+        for(int i=1; i<points.size(); i++){
+            angle = std::atan2(points[i].y-box.center.y, points[i].x-box.center.x) + M_PI; // angle is between 0 to 2*pi
+            double residual = normalizeNegativePiToPositivePi(angle - theta_init);
+            if( residual < 0){
+                theta_init = normalize(theta_init + residual);
+                theta_length = theta_length - residual;
+            }    
+            else if(residual > theta_length){
+                theta_length += residual;
+            }
         }
     }
+    bool isInArc(const double angle, double threshold=0.0) const{
+        if(theta_length >= 2 * M_PI - threshold) return true;
+        double residual = normalizeNegativePiToPositivePi(angle - theta_init);
+        
+        if(residual < threshold) return false;
+        if(residual > theta_length - threshold) return false;
+        return true;
+    }
     bool hasOverlap(const FittedEllipse& another_ellipse) const{
-        std::bitset<12> overlap_area = cover_area & another_ellipse.cover_area;
-        if(cover_area.count() == 12 || another_ellipse.cover_area.count()==12) return true;
-        if(cover_area.count() + another_ellipse.cover_area.count() == 13 ) return false;
-        if(overlap_area.count() > 1) return true; // accept that both two contours have points in at most one interval of angle area.
-                                                  // or two intervals if they form completely an ellipse
+        if(isInArc(another_ellipse.theta_init, M_PI/12.0)) return true;
+        if(another_ellipse.isInArc(theta_init, M_PI/12.0)) return true;
         return false;
+    }
+    static double normalize(double angle){
+        // normalize to 0-2pi
+        if(angle < 0){
+            angle += angle + 2*M_PI;
+        }
+        else if(angle > 2*M_PI){
+            angle -= 2*M_PI;
+        }
+        return angle;
+    }
+    static double normalizeNegativePiToPositivePi(double angle){
+        // normalize to -pi to pi
+        if(angle < -M_PI){
+            angle += angle + 2*M_PI;
+        }
+        else if (angle > M_PI){
+            angle -= 2*M_PI;
+        }
+        return angle;
     }
 };
 
