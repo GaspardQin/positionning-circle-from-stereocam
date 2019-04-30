@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     solver.getPossibleCircles(left_edge, right_edge, concentric_circles);
 
     PreciseTwoConcentricCirclesSolver precise_solver(stereo_cam_ptr);
-    precise_solver.init(concentric_circles[0], left_edge, right_edge, 100);
+    precise_solver.init(concentric_circles[0], left_edge, right_edge, 50);
     ConcentricCircles3D result_concentric_circle;
     precise_solver.solve(result_concentric_circle, 3);
 

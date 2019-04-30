@@ -58,7 +58,10 @@ public:
 
     void solve(CircleT& result, double robust_threshold){
         ceres::Problem problem;
+        //ceres::LossFunction* loss = new ceres::TolerantLoss(1.0, 20.0);
+        //ceres::LossFunctionWrapper* loss = new ceres::LossFunctionWrapper(new ceres::CauchyLoss(robust_threshold), ceres::TAKE_OWNERSHIP);
         ceres::LossFunction* loss = new ceres::CauchyLoss(robust_threshold);
+        //ceres::LossFunction* loss = NULL;
         const int num_points = n_point;
         double incr_angle = M_PI * 2 / num_points;
         Eigen::VectorXd params = init_circle.getParams();
@@ -120,7 +123,7 @@ public:
         }
         Eigen::Matrix3d rot_mat;
         translateParam(params(3),params(4),params(5),rot_mat);
-        rot_mat = init_rot * rot_mat.eval();
+        rot_mat = rot_mat.eval() * init_rot;
         double a,b,c;
         translateParam(rot_mat, a, b, c);
         params(3) = a;
@@ -164,7 +167,7 @@ public:
                 flattern_project_point[1] = project_point(1);
                 solver_ptr->kdtree_right.knnSearch(flattern_project_point, indices, dists, 1, cv::flann::SearchParams());    
             }
-            
+            //residual[0] = dists[0];
             residual[0] = std::sqrt(dists[0]);
             residual[0] = (residual[0] < 50.0)? residual[0]: 50.0;
             //residual[0] = residual[0] * residual[0];
@@ -201,21 +204,18 @@ public:
 
         Eigen::Matrix4d transform;
         translateParam(param, transform);
-        Eigen::Matrix4d init_transform;
-        init_transform.setIdentity();
-        init_transform.block<3,3>(0,0) = init_rot;
-        project_point = stereo_cam_ptr->left.projection_mat * transform *init_transform* point_in_plane;
+        transform.block<3,3>(0,0) = transform.block<3,3>(0,0).eval() * init_rot;
+        project_point = stereo_cam_ptr->left.projection_mat * transform * point_in_plane;
         normalize(project_point);
     }
     virtual void getReprojectPointRight(const EigenVector8d& param, const Eigen::Matrix3d& init_rot, const Eigen::Vector4d& point_in_plane,  Eigen::Vector3d& project_point){
 
         Eigen::Matrix4d transform;
         translateParam(param, transform);
-        Eigen::Matrix4d init_transform;
-        init_transform.setIdentity();
-        init_transform.block<3,3>(0,0) = init_rot;
+        transform.block<3,3>(0,0) = transform.block<3,3>(0,0).eval() * init_rot;
+
         
-        project_point = stereo_cam_ptr->right.projection_mat  * transform *init_transform* point_in_plane;
+        project_point = stereo_cam_ptr->right.projection_mat  * transform * point_in_plane;
         normalize(project_point);
     }
 
